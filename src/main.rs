@@ -1,10 +1,11 @@
 use clap::{App, Arg, SubCommand};
 use chrono::Local;
-use csv::{Reader, Writer, Error};
+use csv::{Reader, Writer, Error, ReaderBuilder};
 use std::fs::{OpenOptions, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use chrono::NaiveDateTime;
 use chrono::TimeZone;
+use chrono::DateTime;
 
 use directories::ProjectDirs;
 use std::path::PathBuf;
@@ -70,7 +71,7 @@ fn clock_in() -> Result<(), Error> {
 fn clock_out() -> Result<(), Error> {
     let last_clock_in = find_last_clock_in()?;
     let csv_path = get_csv_path();
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .create(false)
         .append(true)
         .open(csv_path)?;
@@ -104,28 +105,37 @@ fn clock_out() -> Result<(), Error> {
 }
 
 
-fn find_last_clock_in() -> Result<Option<chrono::DateTime<Local>>, Error> {
+
+fn find_last_clock_in() -> Result<Option<DateTime<Local>>, Error> {
     let csv_path = get_csv_path();
     let file = File::open(csv_path)?;
-    let reader = Reader::from_reader(file);
-    let mut last_line = None;
-    for line in reader.into_records() {
-        last_line = Some(line.unwrap());
+    let mut reader = ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(file);
+
+    let mut last_clock_in: Option<DateTime<Local>> = None;
+    for result in reader.records() {
+        let record = result?;
+        if record.len() == 1 {
+            let clock_in_str = &record[0];
+            last_clock_in = Some(
+                DateTime::parse_from_rfc3339(clock_in_str)
+                    .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?
+                    .with_timezone(&Local),
+            );
+        }
     }
 
-    if let Some(last_line) = last_line {
-        let last_clock_in = chrono::DateTime::parse_from_rfc3339(last_line.as_slice())
-            .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?;
-        Ok(Some(last_clock_in.with_timezone(&Local)))
-    } else {
-        Ok(None)
-    }
+    Ok(last_clock_in)
 }
+
 
 fn print_summary() -> Result<(), Error> {
     let csv_path = get_csv_path();
     let file = File::open(csv_path)?;
-    let mut csv_reader = Reader::from_reader(file);
+    let mut csv_reader = ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(file);
     let mut total_hours = 0.0;
 
     println!("Start Time\t\t\tEnd Time\t\t\tHours");
@@ -133,12 +143,14 @@ fn print_summary() -> Result<(), Error> {
 
     for record in csv_reader.records() {
         let record = record?;
-        let start_time = &record[0];
-        let end_time = &record[1];
-        let hours: f64 = record[2].parse().unwrap_or(0.0);
-        total_hours += hours;
+        if record.len() == 3 {
+            let start_time = &record[0];
+            let end_time = &record[1];
+            let hours: f64 = record[2].parse().unwrap_or(0.0);
+            total_hours += hours;
 
-        println!("{}\t{}\t{:.2}", start_time, end_time, hours);
+            println!("{}\t{}\t{:.2}", start_time, end_time, hours);
+        }
     }
 
     println!("------------------------------------------------------------");
@@ -169,8 +181,10 @@ fn parse_datetime(datetime_str: &str) -> Result<chrono::DateTime<Local>, Error> 
 
 fn update_last_shift_record(index: usize, new_time: chrono::DateTime<Local>) -> Result<(), Error> {
     let csv_path = get_csv_path();
-    let file = File::open(csv_path)?;
-    let mut csv_reader = Reader::from_reader(file);
+    let file = File::open(csv_path.clone())?;
+    let mut csv_reader = ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(file);
     let mut records: Vec<Vec<String>> = csv_reader
         .records()
         .map(|record| record.map(|r| r.iter().map(String::from).collect()))
@@ -185,26 +199,27 @@ fn update_last_shift_record(index: usize, new_time: chrono::DateTime<Local>) -> 
 
     records[last_record_index][index] = new_time.to_rfc3339();
 
-    let mut csv_writer = Writer::from_path("job_hours_records.csv")?;
+    let mut csv_writer = Writer::from_path(csv_path)?;
     csv_writer.write_record(&["Clock In", "Clock Out", "Hours"])?;
 
-
     for record in records {
-        let start_time = chrono::DateTime::parse_from_rfc3339(&record[0])
-            .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?;
-        let end_time = chrono::DateTime::parse_from_rfc3339(&record[1])
-            .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?;
-        let duration = end_time - start_time;
-        let hours = duration.num_minutes() as f64 / 60.0;
-        csv_writer.write_record(&[&record[0], &record[1], &format!("{:.2}", hours)])?;
+        if record.len() == 3 {
+            let start_time = chrono::DateTime::parse_from_rfc3339(&record[0])
+                .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?;
+            let end_time = chrono::DateTime::parse_from_rfc3339(&record[1])
+                .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?;
+            let duration = end_time - start_time;
+            let hours = duration.num_minutes() as f64 / 60.0;
+            csv_writer.write_record(&[&record[0], &record[1], &format!("{:.2}", hours)])?;
+        } else if record.len() == 1 {
+            csv_writer.write_record(&[&record[0]])?;
+        }
     }
-
 
     csv_writer.flush()?;
 
     Ok(())
 }
-
 fn get_csv_path() -> PathBuf {
     let project_dirs = ProjectDirs::from("com", "YourCompany", "YourAppName")
         .expect("Cannot determine the appropriate directories for this system.");
