@@ -3,7 +3,6 @@ use chrono::Local;
 use csv::{Reader, Writer, Error};
 use std::fs::{OpenOptions, File};
 use std::io::{self, Read, Write};
-use std::path::Path;
 use chrono::NaiveDateTime;
 use chrono::TimeZone;
 
@@ -69,8 +68,13 @@ fn clock_in() -> Result<(), Error> {
 }
 
 fn clock_out() -> Result<(), Error> {
-    let csv_path = get_csv_path();
     let last_clock_in = find_last_clock_in()?;
+    let csv_path = get_csv_path();
+    let mut file = OpenOptions::new()
+        .create(false)
+        .append(true)
+        .open(csv_path)?;
+    println!("Here");
 
     if let Some(clock_in_time) = last_clock_in {
         let now = Local::now();
@@ -83,10 +87,6 @@ fn clock_out() -> Result<(), Error> {
             hours
         );
 
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(csv_path)?;
 
         let mut csv_writer = Writer::from_writer(file);
         csv_writer.write_record(&[
@@ -106,35 +106,20 @@ fn clock_out() -> Result<(), Error> {
 
 fn find_last_clock_in() -> Result<Option<chrono::DateTime<Local>>, Error> {
     let csv_path = get_csv_path();
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(csv_path)?;
-
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let last_line = contents.lines().last();
+    let file = File::open(csv_path)?;
+    let reader = Reader::from_reader(file);
+    let mut last_line = None;
+    for line in reader.into_records() {
+        last_line = Some(line.unwrap());
+    }
 
     if let Some(last_line) = last_line {
-        let last_clock_in = chrono::DateTime::parse_from_rfc3339(last_line)
+        let last_clock_in = chrono::DateTime::parse_from_rfc3339(last_line.as_slice())
             .map_err(|e| csv::Error::from(io::Error::new(io::ErrorKind::Other, e)))?;
         Ok(Some(last_clock_in.with_timezone(&Local)))
     } else {
         Ok(None)
     }
-}
-
-fn create_or_get_csv_writer() -> Result<csv::Writer<File>, Error> {
-    let csv_path = get_csv_path();
-    let file_path = csv_path.as_path();
-
-    if !file_path.exists() {
-        let mut csv_writer = Writer::from_path(file_path)?;
-        csv_writer.write_record(&["Clock In", "Clock Out", "Hours"])?;
-    }
-
-    let file = OpenOptions::new().append(true).open(file_path)?;
-    Ok(Writer::from_writer(file))
 }
 
 fn print_summary() -> Result<(), Error> {
