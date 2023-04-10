@@ -1,18 +1,16 @@
-use clap::{App, Arg, SubCommand};
+use chrono::DateTime;
 use chrono::Local;
-use csv::{Reader, Writer, Error, ReaderBuilder};
-use std::fs::{OpenOptions, File};
-use std::io::{self, Write};
 use chrono::NaiveDateTime;
 use chrono::TimeZone;
-use chrono::DateTime;
+use clap::{App, Arg, SubCommand};
+use csv::{Error, Reader, ReaderBuilder, Writer};
+use std::fs::{File, OpenOptions};
+use std::io::{self, Write};
 
 use directories::ProjectDirs;
 use std::path::PathBuf;
 
 // ...
-
-
 
 fn main() -> Result<(), Error> {
     let matches = App::new("Job Hours Logger")
@@ -22,16 +20,24 @@ fn main() -> Result<(), Error> {
         .subcommand(SubCommand::with_name("clock_in").about("Clock in for work"))
         .subcommand(SubCommand::with_name("clock_out").about("Clock out from work"))
         .subcommand(SubCommand::with_name("summary").about("Show work hours summary"))
-        .subcommand(SubCommand::with_name("edit_start").about("Edit the start time of the last recorded shift").arg(
-            Arg::with_name("new_start_time")
-                .help("New start time in the format: %Y-%m-%d %H:%M:%S")
-                .required(true),
-        ))
-        .subcommand(SubCommand::with_name("edit_stop").about("Edit the stop time of the last recorded shift").arg(
-            Arg::with_name("new_stop_time")
-                .help("New stop time in the format: %Y-%m-%d %H:%M:%S")
-                .required(true),
-        ))
+        .subcommand(
+            SubCommand::with_name("edit_start")
+                .about("Edit the start time of the last recorded shift")
+                .arg(
+                    Arg::with_name("new_start_time")
+                        .help("New start time in the format: %Y-%m-%d %H:%M:%S")
+                        .required(true),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("edit_stop")
+                .about("Edit the stop time of the last recorded shift")
+                .arg(
+                    Arg::with_name("new_stop_time")
+                        .help("New stop time in the format: %Y-%m-%d %H:%M:%S")
+                        .required(true),
+                ),
+        )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("edit_start") {
@@ -40,8 +46,7 @@ fn main() -> Result<(), Error> {
     } else if let Some(matches) = matches.subcommand_matches("edit_stop") {
         let new_stop_time = matches.value_of("new_stop_time").unwrap();
         edit_stop(new_stop_time)?;
-    }
-    else if let Some(_) = matches.subcommand_matches("clock_in") {
+    } else if let Some(_) = matches.subcommand_matches("clock_in") {
         clock_in()?;
     } else if let Some(_) = matches.subcommand_matches("clock_out") {
         clock_out()?;
@@ -50,8 +55,7 @@ fn main() -> Result<(), Error> {
     } else {
         println!("Please use 'clock_in', 'clock_out', 'edit_start', 'edit_stop' or 'summary' subcommand.");
     }
-// ...
-
+    // ...
 
     Ok(())
 }
@@ -88,7 +92,6 @@ fn clock_out() -> Result<(), Error> {
             hours
         );
 
-
         let mut csv_writer = Writer::from_writer(file);
         csv_writer.write_record(&[
             clock_in_time.to_rfc3339(),
@@ -104,14 +107,10 @@ fn clock_out() -> Result<(), Error> {
     Ok(())
 }
 
-
-
 fn find_last_clock_in() -> Result<Option<DateTime<Local>>, Error> {
     let csv_path = get_csv_path();
     let file = File::open(csv_path)?;
-    let mut reader = ReaderBuilder::new()
-        .flexible(true)
-        .from_reader(file);
+    let mut reader = ReaderBuilder::new().flexible(true).from_reader(file);
 
     let mut last_clock_in: Option<DateTime<Local>> = None;
     for result in reader.records() {
@@ -129,13 +128,10 @@ fn find_last_clock_in() -> Result<Option<DateTime<Local>>, Error> {
     Ok(last_clock_in)
 }
 
-
 fn print_summary() -> Result<(), Error> {
     let csv_path = get_csv_path();
     let file = File::open(csv_path)?;
-    let mut csv_reader = ReaderBuilder::new()
-        .flexible(true)
-        .from_reader(file);
+    let mut csv_reader = ReaderBuilder::new().flexible(true).from_reader(file);
     let mut total_hours = 0.0;
 
     println!("Start Time\t\t\tEnd Time\t\t\tHours");
@@ -162,14 +158,20 @@ fn print_summary() -> Result<(), Error> {
 fn edit_start(new_start_time: &str) -> Result<(), Error> {
     let new_start_time = parse_datetime(new_start_time)?;
     update_last_shift_record(0, new_start_time)?;
-    println!("Updated start time to: {}", new_start_time.format("%Y-%m-%d %H:%M:%S"));
+    println!(
+        "Updated start time to: {}",
+        new_start_time.format("%Y-%m-%d %H:%M:%S")
+    );
     Ok(())
 }
 
 fn edit_stop(new_stop_time: &str) -> Result<(), Error> {
     let new_stop_time = parse_datetime(new_stop_time)?;
     update_last_shift_record(1, new_stop_time)?;
-    println!("Updated stop time to: {}", new_stop_time.format("%Y-%m-%d %H:%M:%S"));
+    println!(
+        "Updated stop time to: {}",
+        new_stop_time.format("%Y-%m-%d %H:%M:%S")
+    );
     Ok(())
 }
 
@@ -182,9 +184,7 @@ fn parse_datetime(datetime_str: &str) -> Result<chrono::DateTime<Local>, Error> 
 fn update_last_shift_record(index: usize, new_time: chrono::DateTime<Local>) -> Result<(), Error> {
     let csv_path = get_csv_path();
     let file = File::open(csv_path.clone())?;
-    let mut csv_reader = ReaderBuilder::new()
-        .flexible(true)
-        .from_reader(file);
+    let mut csv_reader = ReaderBuilder::new().flexible(true).from_reader(file);
     let mut records: Vec<Vec<String>> = csv_reader
         .records()
         .map(|record| record.map(|r| r.iter().map(String::from).collect()))
